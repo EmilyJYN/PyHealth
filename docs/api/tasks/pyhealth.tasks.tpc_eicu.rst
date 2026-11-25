@@ -1,3 +1,17 @@
+.. Contributors: Manling Tan, Yining Jin, Xiao Luo
+.. NetIDs: manling4, yining34, xiaoluo6
+..
+.. Paper Title:
+.. Temporal Pointwise Convolutional Networks for
+.. Length of Stay Prediction in the Intensive Care Unit
+..
+.. Paper Authors:
+.. Emma Rocheteau, Pietro Liò, and Stephanie Hyland (2021)
+..
+.. Paper URL:
+.. https://arxiv.org/abs/2007.09483
+
+
 Hourly remaining ICU length of stay
 ==================================
 
@@ -8,37 +22,41 @@ Hourly remaining ICU length of stay
 Implementation status
 ---------------------
 
-The baseline implements adult/five-hour eligibility, admission static features,
-hourly remaining-LOS labels and synthetic CSV validation. Dynamic extraction
-uses existing YAIB helpers provisionally. This is a partial contribution under
-active integration, not a final training/ablation implementation.
+The task implements adult cohort selection, hourly dynamic feature
+extraction, admission static features, and hourly remaining-LOS labels.
+The observation horizon is capped at 336 hours.
 
-``TPCLengthOfStayEICU()`` works with zero observation removal and no decay.
-Nonzero ``missing_rate`` and ``include_decay=True`` deliberately raise
-``NotImplementedError`` when samples are processed, rather than silently
-producing unimplemented results.
+Observation removal is controlled by ``missing_rate`` (0.0 to 1.0).
+Removal is deterministic for a given seed and stay identifier.
+A rate of 0.0 preserves all observed values, while a rate of 1.0
+removes all observed feature cells.
+
+When ``include_decay=True``, decay features are calculated after
+observation removal. Observed values reset to 1.0, and unobserved
+values decay by a factor of 0.75 per hour.
+
+Missing dynamic values remain NaN in the task output. Forward filling
+and normalization are handled by the configured YAIB preprocessing
+pipeline.
+
 
 Extension points
 ----------------
 
-* ``TODO(B)`` in ``pyhealth/tasks/tpc_eicu.py``: review dynamic feature coverage
-  and hourly aggregation, confirm training-only normalization/forward fill,
-  and integrate decay after removal. For masking, A/B should reuse the existing
-  ``_apply_missingness`` in the repository-root ``tpc_eicu.py`` prototype after
-  checking compatibility. It already implements seeded removal of hourly cells;
-  this placeholder is an integration boundary, not a request to write it again.
-  Confirm raw-row versus aggregated-cell removal and rerun the pending tests.
-* ``TODO(A)`` in ``examples/eicu_hourly_los_lstm.py``: integrate existing training
-  work where available and complete explicit LSTM
-  training, patient-disjoint splits, agreed losses/metrics and the two-training
-  by three-test missingness study. This file is a scaffold and raises until
-  implemented. The example filename is present but the rubric's working
-  ablation requirement is still outstanding.
-* Disabled preprocessing contract tests in ``tests/core/test_tpc_eicu.py``
-  retain numerical expectations. Enable and revise these after the shared
-  interface is confirmed. Skipped tests are pending work, not passing coverage.
-* Extend the integration check with actual model training when the training
-  implementation is available. Its current scope ends at CSV-to-task outputs.
+* ``pyhealth/tasks/tpc_eicu.py`` implements hourly remaining-LOS
+  preprocessing, deterministic observation removal, and optional
+  decay features.
+* ``tests/core/test_tpc_eicu.py`` covers cohort selection, static
+  features, LOS labels, observation removal, decay, and temporal
+  consistency. Some hourly aggregation, forward-fill, and combined
+  preprocessing tests remain skipped pending verification.
+* ``examples/eicu_hourly_los_lstm.py`` is the model-training and
+  missingness-ablation integration point. Complete and validate
+  model training, patient-disjoint splits, evaluation metrics,
+  and the two-training by three-test missingness study.
+* The integration checkpoint currently validates synthetic
+  CSV-to-task outputs. It does not replace actual model training
+  or final experimental evaluation.
 
 Runnable validation
 -------------------
@@ -73,8 +91,11 @@ nursecharting using eICUDataset. One sample is produced per eligible stay:
 * Labels at hours 5..H have shape (H-4,1) and equal total LOS hours minus h.
   Exact-discharge labels may be zero. The observation horizon is capped;
   remaining LOS is not capped.
-* Planned decay mirrors dynamic dimensions/times. Existing schema wiring is
-  provisional until preprocessing review.
+* ``missing_rate`` controls removal of observed hourly feature cells.
+  A rate of 0.0 preserves observations; 1.0 removes all observed cells.
+* ``include_decay=True`` adds decay features matching the dynamic
+  feature dimensions. Decay resets to 1.0 upon observation and
+  decreases by a factor of 0.75 per unobserved hour.
 * Split by patient_id rather than stay_id. Fit learned processors on training
   patients only. Existing YAIB label processors min-max scale training targets;
   activated predictions return original hours. Avoid double unscaling.
